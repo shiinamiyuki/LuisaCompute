@@ -37,3 +37,7 @@ endif ()
 if (LUISA_COMPUTE_ENABLE_METAL)
     add_subdirectory(metal)
 endif ()
+
+if (LUISA_COMPUTE_ENABLE_VULKAN)
+    add_subdirectory(vk)
+endif ()

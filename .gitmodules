@@ -11,3 +11,15 @@
 	path = src/ext/mimalloc
 	url = https://github.com/microsoft/mimalloc.git
 
+[submodule "src/backends/vk/ext/shaderc"]
+	path = src/backends/vk/ext/shaderc
+	url = https://github.com/google/shaderc
+[submodule "src/backends/vk/ext/SPIRV-Tools"]
+	path = src/backends/vk/ext/SPIRV-Tools
+	url = https://github.com/KhronosGroup/SPIRV-Tools
+[submodule "src/backends/vk/ext/SPIRV-Headers"]
+	path = src/backends/vk/ext/SPIRV-Headers
+	url = https://github.com/KhronosGroup/SPIRV-Headers
+[submodule "src/backends/vk/ext/glslang"]
+	path = src/backends/vk/ext/glslang
+	url = https://github.com/KhronosGroup/glslang

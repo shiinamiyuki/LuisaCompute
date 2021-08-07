@@ -10,3 +10,4 @@
 [submodule "src/ext/mimalloc"]
 	path = src/ext/mimalloc
 	url = https://github.com/microsoft/mimalloc.git
+

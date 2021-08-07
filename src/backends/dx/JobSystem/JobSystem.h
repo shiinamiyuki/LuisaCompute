@@ -1,10 +1,10 @@
 #pragma once
-#include <VEngineConfig.h>
-#include <Common/Pool.h>
-#include <Common/LockFreeArrayQueue.h>
+#include <util/vstlconfig.h>
+#include <util/Pool.h>
+#include <util/LockFreeArrayQueue.h>
 #include <atomic>
 #include <stdint.h>
-#include <Common/MetaLib.h>
+#include <util/MetaLib.h>
 class JobNode;
 class JobBucket;
 class JobThreadRunnable;

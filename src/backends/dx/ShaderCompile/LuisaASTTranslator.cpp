@@ -2,8 +2,8 @@
 #include <ast/interface.h>
 #include <ast/constant_data.h>
 #include <Common/Common.h>
-#include <Common/VObject.h>
-#include <Common/linq.h>
+#include <util/VObject.h>
+#include <util/linq.h>
 #include <ShaderCompile/LuisaASTTranslator.h>
 
 namespace luisa::compute {

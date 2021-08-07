@@ -1,6 +1,6 @@
 #pragma once
 #include <Common/Common.h>
-#include <Common/VObject.h>
+#include <util/VObject.h>
 #include <CJsonObject/SerializeStruct.h>
 class BinaryReader;
 namespace SerializeStruct {

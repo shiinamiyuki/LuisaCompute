@@ -15,7 +15,7 @@
 #include <core/clock.h>
 #include <core/logging.h>
 #include <core/basic_types.h>
-#include <core/memory.h>
+#include <util/arena.h>
 #include <ast/variable.h>
 #include <ast/function.h>
 #include <runtime/pixel.h>
@@ -32,9 +32,10 @@ namespace luisa::compute {
         TextureDownloadCommand,     \
         TextureCopyCommand,         \
         TextureToBufferCopyCommand, \
-        AccelTraceClosestCommand,   \
-        AccelTraceAnyCommand,       \
-        AccelUpdateCommand
+        AccelUpdateCommand,         \
+        AccelBuildCommand,          \
+        MeshUpdateCommand,          \
+        MeshBuildCommand
 
 #define LUISA_MAKE_COMMAND_FWD_DECL(CMD) class CMD;
 LUISA_MAP(LUISA_MAKE_COMMAND_FWD_DECL, LUISA_ALL_COMMANDS)
@@ -48,6 +49,7 @@ struct CommandVisitor {
 };
 
 class Command;
+class CommandList;
 
 namespace detail {
 
@@ -56,63 +58,60 @@ namespace detail {
 LUISA_MAP(LUISA_MAKE_COMMAND_POOL_DECL, LUISA_ALL_COMMANDS)
 #undef LUISA_MAKE_COMMAND_POOL_DECL
 
-class CommandRecycle : private CommandVisitor {
-
-#define LUISA_MAKE_COMMAND_RECYCLE(CMD) \
-    void visit(const CMD *command) noexcept override;
-    LUISA_MAP(LUISA_MAKE_COMMAND_RECYCLE, LUISA_ALL_COMMANDS)
-#undef LUISA_MAKE_COMMAND_RECYCLE
-
-public:
-    void operator()(class Command *command) noexcept;
-};
-
 }// namespace detail
 
-using CommandHandle = std::unique_ptr<Command, detail::CommandRecycle>;
-
-#define LUISA_MAKE_COMMAND_COMMON(Cmd)                                           \
+#define LUISA_MAKE_COMMAND_COMMON_CREATE(Cmd)                                    \
     template<typename... Args>                                                   \
     [[nodiscard]] static auto create(Args &&...args) noexcept {                  \
         Clock clock;                                                             \
         auto command = detail::pool_##Cmd().create(std::forward<Args>(args)...); \
         LUISA_VERBOSE_WITH_LOCATION(                                             \
             "Created {} in {} ms.", #Cmd, clock.toc());                          \
-        auto command_ptr = static_cast<Command *>(command.release());            \
-        return CommandHandle{command_ptr};                                       \
-    }                                                                            \
-    void accept(CommandVisitor &visitor) const noexcept override {               \
-        visitor.visit(this);                                                     \
+        return command;                                                          \
     }
+
+#define LUISA_MAKE_COMMAND_COMMON_ACCEPT(Cmd) \
+    void accept(CommandVisitor &visitor) const noexcept override { visitor.visit(this); }
+
+#define LUISA_MAKE_COMMAND_COMMON_RECYCLE(Cmd) \
+    void _recycle() noexcept override { detail::pool_##Cmd().recycle(this); }
+
+#define LUISA_MAKE_COMMAND_COMMON(Cmd)    \
+    LUISA_MAKE_COMMAND_COMMON_CREATE(Cmd) \
+    LUISA_MAKE_COMMAND_COMMON_ACCEPT(Cmd) \
+    LUISA_MAKE_COMMAND_COMMON_RECYCLE(Cmd)
 
 class Command {
 
 public:
     static constexpr auto max_resource_count = 48u;
 
-    struct Resource {
+    struct Binding {
 
         enum struct Tag : uint32_t {
             NONE,
             BUFFER,
-            TEXTURE
+            TEXTURE,
+            HEAP,
+            ACCEL
         };
 
         uint64_t handle{0u};
         Tag tag{Tag::NONE};
         Usage usage{Usage::NONE};
 
-        constexpr Resource() noexcept = default;
-        constexpr Resource(uint64_t handle, Tag tag, Usage usage) noexcept
+        constexpr Binding() noexcept = default;
+        constexpr Binding(uint64_t handle, Tag tag, Usage usage) noexcept
             : handle{handle}, tag{tag}, usage{usage} {}
     };
 
 private:
-    std::array<Resource, max_resource_count> _resource_slots{};
+    std::array<Binding, max_resource_count> _resource_slots{};
     size_t _resource_count{0u};
+    Command *_next_command{nullptr};
 
 protected:
-    void _use_resource(uint64_t handle, Resource::Tag tag, Usage usage) noexcept;
+    void _use_resource(uint64_t handle, Binding::Tag tag, Usage usage) noexcept;
     void _buffer_read_only(uint64_t handle) noexcept;
     void _buffer_write_only(uint64_t handle) noexcept;
     void _buffer_read_write(uint64_t handle) noexcept;
@@ -120,11 +119,17 @@ protected:
     void _texture_write_only(uint64_t handle) noexcept;
     void _texture_read_write(uint64_t handle) noexcept;
 
+private:
+    friend class CommandList;
+    [[nodiscard]] auto _next() const noexcept { return _next_command; }
+    Command *_set_next(Command *cmd) noexcept { return cmd == nullptr ? this : (_next_command = cmd); }
+    virtual void _recycle() noexcept = 0;
+
 protected:
     ~Command() noexcept = default;
 
 public:
-    [[nodiscard]] std::span<const Resource> resources() const noexcept;
+    [[nodiscard]] std::span<const Binding> resources() const noexcept;
     virtual void accept(CommandVisitor &visitor) const noexcept = 0;
 };
 
@@ -369,7 +374,8 @@ public:
             BUFFER,
             TEXTURE,
             UNIFORM,
-            TEXTURE_HEAP
+            HEAP,
+            ACCEL,
         };
 
         Tag tag;
@@ -410,9 +416,17 @@ public:
 
     struct TextureHeapArgument : Argument {
         uint64_t handle{};
-        TextureHeapArgument() noexcept : Argument{Tag::TEXTURE_HEAP, 0u} {}
+        TextureHeapArgument() noexcept : Argument{Tag::HEAP, 0u} {}
         TextureHeapArgument(uint32_t vid, uint64_t handle) noexcept
-            : Argument{Tag::TEXTURE_HEAP, vid},
+            : Argument{Tag::HEAP, vid},
+              handle{handle} {}
+    };
+
+    struct AccelArgument : Argument {
+        uint64_t handle{};
+        AccelArgument() noexcept : Argument{Tag::ACCEL, 0u} {}
+        AccelArgument(uint32_t vid, uint64_t handle) noexcept
+            : Argument{Tag::ACCEL, vid},
               handle{handle} {}
     };
 
@@ -423,7 +437,6 @@ private:
     Function _kernel;
     size_t _argument_buffer_size{0u};
     uint _dispatch_size[3]{};
-    uint _block_size[3]{};
     uint32_t _argument_count{0u};
     ArgumentBuffer _argument_buffer{};
 
@@ -439,11 +452,13 @@ public:
     //   1. captured buffers
     //   2. captured textures
     //   3. captured texture heaps
-    //   3. arguments
+    //   4. captured acceleration structures
+    //   4. arguments
     void encode_buffer(uint32_t variable_uid, uint64_t handle, size_t offset, Usage usage) noexcept;
     void encode_texture(uint32_t variable_uid, uint64_t handle, Usage usage) noexcept;
     void encode_uniform(uint32_t variable_uid, const void *data, size_t size, size_t alignment) noexcept;
-    void encode_texture_heap(uint32_t variable_uid, uint64_t handle) noexcept;
+    void encode_heap(uint32_t variable_uid, uint64_t handle) noexcept;
+    void encode_accel(uint32_t variable_uid, uint64_t handle) noexcept;
 
     template<typename Visit>
     void decode(Visit &&visit) const noexcept {
@@ -475,11 +490,18 @@ public:
                     p += uniform_argument.size;
                     break;
                 }
-                case Argument::Tag::TEXTURE_HEAP: {
+                case Argument::Tag::HEAP: {
                     TextureHeapArgument arg;
                     std::memcpy(&arg, p, sizeof(TextureHeapArgument));
                     visit(argument.variable_uid, arg);
                     p += sizeof(TextureHeapArgument);
+                    break;
+                }
+                case Argument::Tag::ACCEL: {
+                    AccelArgument arg;
+                    std::memcpy(&arg, p, sizeof(AccelArgument));
+                    visit(argument.variable_uid, arg);
+                    p += sizeof(AccelArgument);
                     break;
                 }
                 default: {
@@ -492,24 +514,100 @@ public:
     LUISA_MAKE_COMMAND_COMMON(ShaderDispatchCommand)
 };
 
-class AccelUpdateCommand : public Command {
+enum struct AccelBuildHint {
+    FAST_TRACE, // build with best quality
+    FAST_UPDATE,// optimize for frequent update, usually with compaction
+    FAST_REBUILD// optimize for frequent rebuild, maybe without compaction
+};
+
+class MeshBuildCommand : public Command {
+
+private:
+    uint64_t _handle;
+    AccelBuildHint _hint;
+    uint64_t _vertex_buffer_handle;
+    size_t _vertex_buffer_offset;
+    size_t _vertex_stride;
+    size_t _vertex_count;
+    uint64_t _triangle_buffer_handle;
+    size_t _triangle_buffer_offset;
+    size_t _triangle_count;
 
 public:
+    MeshBuildCommand(uint64_t handle, AccelBuildHint hint,
+                     uint64_t v_handle, size_t v_offset, size_t v_stride, size_t v_count,
+                     uint64_t t_handle, size_t t_offset, size_t t_count) noexcept
+        : _handle{handle}, _hint{hint},
+          _vertex_buffer_handle{v_handle}, _vertex_buffer_offset{v_offset}, _vertex_stride{v_stride}, _vertex_count{v_count},
+          _triangle_buffer_handle{t_handle}, _triangle_buffer_offset{t_offset}, _triangle_count{t_count} {}
+    [[nodiscard]] auto handle() const noexcept { return _handle; }
+    [[nodiscard]] auto vertex_buffer_handle() const noexcept { return _vertex_buffer_handle; }
+    [[nodiscard]] auto vertex_buffer_offset() const noexcept { return _vertex_buffer_offset; }
+    [[nodiscard]] auto vertex_stride() const noexcept { return _vertex_stride; }
+    [[nodiscard]] auto vertex_count() const noexcept { return _vertex_count; }
+    [[nodiscard]] auto triangle_buffer_handle() const noexcept { return _triangle_buffer_handle; }
+    [[nodiscard]] auto triangle_buffer_offset() const noexcept { return _triangle_buffer_offset; }
+    [[nodiscard]] auto triangle_count() const noexcept { return _triangle_count; }
+    [[nodiscard]] auto hint() const noexcept { return _hint; }
+    LUISA_MAKE_COMMAND_COMMON(MeshBuildCommand)
+};
+
+class MeshUpdateCommand : public Command {
+
+private:
+    uint64_t _handle;
+
+public:
+    explicit MeshUpdateCommand(uint64_t handle) noexcept : _handle{handle} {}
+    [[nodiscard]] auto handle() const noexcept { return _handle; }
+    LUISA_MAKE_COMMAND_COMMON(MeshUpdateCommand)
+};
+
+class AccelBuildCommand : public Command {
+
+private:
+    uint64_t _handle;
+    AccelBuildHint _hint;
+    std::span<const uint64_t> _instance_mesh_handles;
+    std::span<const float4x4> _instance_transforms;
+
+public:
+    AccelBuildCommand(uint64_t handle, AccelBuildHint hint,
+                      std::span<const uint64_t> instance_mesh_handles,
+                      std::span<const float4x4> instance_transforms) noexcept
+        : _handle{handle}, _hint{hint},
+          _instance_mesh_handles{instance_mesh_handles},
+          _instance_transforms{instance_transforms} {}
+    [[nodiscard]] auto handle() const noexcept { return _handle; }
+    [[nodiscard]] auto hint() const noexcept { return _hint; }
+    [[nodiscard]] auto instance_mesh_handles() const noexcept { return _instance_mesh_handles; }
+    [[nodiscard]] auto instance_transforms() const noexcept { return _instance_transforms; }
+    LUISA_MAKE_COMMAND_COMMON(AccelBuildCommand)
+};
+
+class AccelUpdateCommand : public Command {
+
+private:
+    uint64_t _handle;
+    size_t _first_instance{0u};
+    std::span<const float4x4> _instance_transforms;
+
+public:
+    explicit AccelUpdateCommand(uint64_t handle) noexcept : _handle{handle} {}
+    AccelUpdateCommand(uint64_t handle, std::span<const float4x4> instance_transforms, size_t first) noexcept
+        : _handle{handle},
+          _first_instance{first},
+          _instance_transforms{instance_transforms} {}
+    [[nodiscard]] auto handle() const noexcept { return _handle; }
+    [[nodiscard]] auto should_update_transforms() const noexcept { return !_instance_transforms.empty(); }
+    [[nodiscard]] auto first_instance_to_update() const noexcept { return _first_instance; }
+    [[nodiscard]] auto updated_transforms() const noexcept { return _instance_transforms; }
     LUISA_MAKE_COMMAND_COMMON(AccelUpdateCommand)
 };
 
-class AccelTraceClosestCommand : public Command {
-
-public:
-    LUISA_MAKE_COMMAND_COMMON(AccelTraceClosestCommand)
-};
-
-class AccelTraceAnyCommand : public Command {
-
-public:
-    LUISA_MAKE_COMMAND_COMMON(AccelTraceAnyCommand)
-};
-
+#undef LUISA_MAKE_COMMAND_COMMON_CREATE
+#undef LUISA_MAKE_COMMAND_COMMON_ACCEPT
+#undef LUISA_MAKE_COMMAND_COMMON_RECYCLE
 #undef LUISA_MAKE_COMMAND_COMMON
 
 }// namespace luisa::compute

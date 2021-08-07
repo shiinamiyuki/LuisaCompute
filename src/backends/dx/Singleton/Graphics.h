@@ -1,11 +1,11 @@
 #pragma once
 #include <Common/GFXUtil.h>
-#include <Common/VObject.h>
-#include <Common/MetaLib.h>
-#include <Common/HashMap.h>
+#include <util/VObject.h>
+#include <util/MetaLib.h>
+#include <util/HashMap.h>
 #include <Common/BitArray.h>
-#include <Common/vector.h>
-#include <Common/RandomVector.h>
+#include <util/vector.h>
+#include <util/RandomVector.h>
 #include <Struct/RenderTarget.h>
 #include <Utility/ElementAllocator.h>
 #include <RenderComponent/DescriptorHeap.h>
@@ -39,7 +39,7 @@ class Graphics {
 
 private:
 	static thread_local Graphics* current;
-	spin_mutex mtx;
+	luisa::spin_mutex mtx;
 	std::unique_ptr<DescriptorHeap> globalDescriptorHeap;
 	std::unique_ptr<DescriptorHeap> globalSamplerHeap;
 	BitArray usedDescs;

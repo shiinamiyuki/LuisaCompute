@@ -1,6 +1,6 @@
 #pragma once
-#include <Common/vector.h>
-#include <Common/DLL.h>
+#include <util/vector.h>
+#include <Common/DynamicDLL.h>
 class  IEnumerator
 {
 private:

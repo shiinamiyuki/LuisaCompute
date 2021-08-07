@@ -7,7 +7,7 @@
 #include <numeric>
 
 #include <core/clock.h>
-#include <core/dynamic_module.h>
+#include <util/dynamic_module.h>
 #include <runtime/device.h>
 #include <runtime/context.h>
 #include <ast/interface.h>
@@ -29,6 +29,8 @@ struct Test {
 LUISA_STRUCT(Test, something, a)
 
 int main(int argc, char *argv[]) {
+
+    constexpr auto f = 10;
 
     luisa::log_level_verbose();
 
@@ -90,9 +92,9 @@ int main(int argc, char *argv[]) {
         Var<float2> w{v_int.cast<float>(), v_float};
         w *= float2{1.2f};
 
-        if_(1 + 1 == 2, [] {
+        if_(v_int == v_int, [] {
             Var a = 0.0f;
-        }).elif (1 + 2 == 3, [] {
+        }).elif (1 + 2 == v_int, [] {
               Var b = 1.0f;
           }).else_([] {
             Var c = 2.0f;
@@ -126,7 +128,7 @@ int main(int argc, char *argv[]) {
 
     auto kernel = device.compile(kernel_def);
     auto command = kernel(float_buffer, 12u).dispatch(1024u);
-    auto launch_command = static_cast<ShaderDispatchCommand *>(command.get());
+    auto launch_command = static_cast<ShaderDispatchCommand *>(command);
     LUISA_INFO("Command: kernel = {}, args = {}", hash_to_string(launch_command->kernel().hash()), launch_command->argument_count());
 
     clock.tic();

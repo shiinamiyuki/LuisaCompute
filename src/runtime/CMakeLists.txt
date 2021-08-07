@@ -1,7 +1,8 @@
 set(LUISA_COMPUTE_RUNTIME_SOURCES
     context.cpp context.h
-    device.cpp device.h
+    device.h
     command.cpp command.h
+    command_list.cpp command_list.h
     command_buffer.cpp command_buffer.h
     pixel.h
     stream.cpp stream.h
@@ -9,11 +10,11 @@ set(LUISA_COMPUTE_RUNTIME_SOURCES
     buffer.h
     image.h
     volume.h
-    texture_sampler.h
-    texture_heap.cpp texture_heap.h
-    shader.h)
+    heap.cpp heap.h
+    shader.h
+    texture.cpp texture.h resource.cpp resource.h)
 
-add_library(luisa-compute-runtime SHARED ${LUISA_COMPUTE_RUNTIME_SOURCES}  )
+add_library(luisa-compute-runtime SHARED ${LUISA_COMPUTE_RUNTIME_SOURCES})
 target_link_libraries(luisa-compute-runtime PUBLIC luisa-compute-ast)
 set_target_properties(luisa-compute-runtime PROPERTIES
                       WINDOWS_EXPORT_ALL_SYMBOLS ON

@@ -1,14 +1,14 @@
 #pragma once
-#include <Common/MetaLib.h>
-#include <Common/Memory.h>
-#include <Common/Log.h>
-#include <Common/Pool.h>
+#include <util/MetaLib.h>
+#include <util/Memory.h>
+#include <util/vector.h>
+#include <util/Pool.h>
 template<typename T>
 class PoolAllocator {
 private:
 	StackObject<Pool<Storage<T, 1>, VEngine_AllocType::Default>> globalTransformPool;
 	std::mutex transPoolLock;
-	spin_mutex transAllocLock;
+	luisa::spin_mutex transAllocLock;
 	std::atomic_bool poolInited = false;
 
 public:

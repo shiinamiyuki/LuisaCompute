@@ -3,8 +3,8 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
-#include <Common/DLL.h>
-#include <Common/Memory.h>
+#include <Common/DynamicDLL.h>
+#include <util/Memory.h>
 class   TaskThread
 {
 private:

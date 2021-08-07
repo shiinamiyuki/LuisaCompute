@@ -1,8 +1,8 @@
 #pragma once
 #include <Common/GFXUtil.h>
-#include <Common/Pool.h>
+#include <util/Pool.h>
 #include <mutex>
-#include <Common/LockFreeArrayQueue.h>
+#include <util/LockFreeArrayQueue.h>
 class RenderCommand;
 class ThreadCommand;
 struct RenderCommandExecutable {

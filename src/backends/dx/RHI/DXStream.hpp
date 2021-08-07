@@ -2,10 +2,10 @@
 #include <Common/GFXUtil.h>
 #include <PipelineComponent/CommandAllocator.h>
 #include <PipelineComponent/ThreadCommand.h>
-#include <Common/LockFreeArrayQueue.h>
-#include <runtime/command_buffer.h>
+#include <util/LockFreeArrayQueue.h>
+#include <runtime/command_list.h>
 #include <PipelineComponent/FrameResource.h>
-#include <Common/Runnable.h>
+#include <util/Runnable.h>
 #include <RHI/DXCommandVisitor.h>
 
 namespace luisa::compute {
@@ -49,7 +49,7 @@ public:
 
 	void Execute(
 		GFXDevice* device,
-		CommandBuffer&& buffer,
+		CommandList&& buffer,
 		ID3D12Fence* fence,
 		GetFrameResourceFunc const& getResource,
 		InternalShaders* internalShader,

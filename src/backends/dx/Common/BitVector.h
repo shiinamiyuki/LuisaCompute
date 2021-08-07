@@ -1,8 +1,8 @@
 #pragma once
-#include <VEngineConfig.h>
+#include <util/vstlconfig.h>
 #include <memory>
 #include <stdint.h>
-#include <Common/Memory.h>
+#include <util/Memory.h>
 class BitVector {
 public:
 	struct Iterator {

@@ -30,24 +30,15 @@ void FunctionBuilder::pop(const FunctionBuilder *func) noexcept {
              && f->shared_variables().empty()
              && f->captured_buffers().empty()
              && f->captured_textures().empty()
-             && f->captured_texture_heaps().empty())) [[unlikely]] {
+             && f->captured_heaps().empty())) [[unlikely]] {
         LUISA_ERROR_WITH_LOCATION(
             "Custom callables may not have builtin, "
             "shared or captured variables.");
     }
-    // check discarded call expressions to avoid leaked side-effects
-    for (auto e : f->_call_expressions) {
-        if (e->usage() == Usage::NONE) {
-            LUISA_ERROR_WITH_LOCATION("Found leaked call expression in function builder.");
-        }
-    }
 }
 
 FunctionBuilder *FunctionBuilder::current() noexcept {
-    if (_function_stack().empty()) [[unlikely]] {
-        LUISA_ERROR_WITH_LOCATION("Function stack is empty.");
-    }
-    return _function_stack().back();
+    return _function_stack().empty() ? nullptr : _function_stack().back();
 }
 
 void FunctionBuilder::_append(const Statement *statement) noexcept {
@@ -150,10 +141,7 @@ const RefExpr *FunctionBuilder::_builtin(Variable::Tag tag) noexcept {
 }
 
 const RefExpr *FunctionBuilder::argument(const Type *type) noexcept {
-    auto variable_tag = _tag == Function::Tag::KERNEL
-                            ? Variable::Tag::UNIFORM
-                            : Variable::Tag::LOCAL;
-    Variable v{type, variable_tag, _next_variable_uid()};
+    Variable v{type, Variable::Tag::LOCAL, _next_variable_uid()};
     _arguments.emplace_back(v);
     return _ref(v);
 }
@@ -259,11 +247,10 @@ FunctionBuilder::FunctionBuilder(Arena *arena, FunctionBuilder::Tag tag) noexcep
       _captured_buffers{*arena},
       _captured_textures{*arena},
       _captured_heaps{*arena},
+      _captured_accels{*arena},
       _arguments{*arena},
       _used_custom_callables{*arena},
-      _used_builtin_callables{*arena},
       _variable_usages{*arena, 128u},
-      _call_expressions{*arena},
       _hash{0ul},
       _tag{tag} {}
 
@@ -299,16 +286,9 @@ const CallExpr *FunctionBuilder::call(const Type *type, CallOp call_op, std::ini
             "Custom functions are not allowed to "
             "be called with enum CallOp.");
     }
+    _used_builtin_callables.mark(call_op);
     ArenaVector func_args{*_arena, args};
-    auto expr = _arena->create<CallExpr>(type, call_op, func_args);
-    _call_expressions.emplace_back(expr);
-    if (std::find(_used_builtin_callables.cbegin(),
-                  _used_builtin_callables.cend(),
-                  call_op)
-        == _used_builtin_callables.cend()) {
-        _used_builtin_callables.emplace_back(call_op);
-    }
-    return expr;
+    return _arena->create<CallExpr>(type, call_op, func_args);
 }
 
 const CallExpr *FunctionBuilder::call(const Type *type, Function custom, std::initializer_list<const Expression *> args) noexcept {
@@ -317,7 +297,6 @@ const CallExpr *FunctionBuilder::call(const Type *type, Function custom, std::in
     }
     ArenaVector func_args{*_arena, args};
     auto expr = _arena->create<CallExpr>(type, custom, func_args);
-    _call_expressions.emplace_back(expr);
     if (auto iter = std::find(_used_custom_callables.cbegin(), _used_custom_callables.cend(), custom);
         iter == _used_custom_callables.cend()) {
         _used_custom_callables.emplace_back(custom);
@@ -338,11 +317,7 @@ void FunctionBuilder::_compute_hash() noexcept {
     _hash = std::hash<uint64_t>{}(reinterpret_cast<uint64_t>(this));
 }
 
-void FunctionBuilder::mark_raytracing() noexcept {
-    _raytracing = true;
-}
-
-const RefExpr *FunctionBuilder::texture_heap_binding(uint64_t handle) noexcept {
+const RefExpr *FunctionBuilder::heap_binding(uint64_t handle) noexcept {
     if (auto iter = std::find_if(
             _captured_heaps.cbegin(),
             _captured_heaps.cend(),
@@ -350,15 +325,68 @@ const RefExpr *FunctionBuilder::texture_heap_binding(uint64_t handle) noexcept {
         iter != _captured_heaps.cend()) {
         return _ref(iter->variable);
     }
-    Variable v{Type::of<TextureHeap>(), Variable::Tag::TEXTURE_HEAP, _next_variable_uid()};
-    _captured_heaps.emplace_back(TextureHeapBinding{v, handle});
+    Variable v{Type::of<Heap>(), Variable::Tag::HEAP, _next_variable_uid()};
+    _captured_heaps.emplace_back(HeapBinding{v, handle});
     return _ref(v);
 }
 
-const RefExpr *FunctionBuilder::texture_heap() noexcept {
-    Variable v{Type::of<TextureHeap>(), Variable::Tag::TEXTURE_HEAP, _next_variable_uid()};
+const RefExpr *FunctionBuilder::heap() noexcept {
+    Variable v{Type::of<Heap>(), Variable::Tag::HEAP, _next_variable_uid()};
     _arguments.emplace_back(v);
     return _ref(v);
+}
+
+const RefExpr *FunctionBuilder::accel_binding(uint64_t handle) noexcept {
+    _raytracing = true;
+    if (auto iter = std::find_if(
+            _captured_accels.cbegin(),
+            _captured_accels.cend(),
+            [handle](auto &&binding) { return binding.handle == handle; });
+        iter != _captured_accels.cend()) {
+        return _ref(iter->variable);
+    }
+    Variable v{Type::of<Accel>(), Variable::Tag::ACCEL, _next_variable_uid()};
+    _captured_accels.emplace_back(AccelBinding{v, handle});
+    return _ref(v);
+}
+
+const RefExpr *FunctionBuilder::accel() noexcept {
+    _raytracing = true;
+    Variable v{Type::of<Accel>(), Variable::Tag::ACCEL, _next_variable_uid()};
+    _arguments.emplace_back(v);
+    return _ref(v);
+}
+
+const CallExpr *FunctionBuilder::call(const Type *type, CallOp call_op, std::span<const Expression *const> args) noexcept {
+    if (call_op == CallOp::CUSTOM) [[unlikely]] {
+      LUISA_ERROR_WITH_LOCATION(
+          "Custom functions are not allowed to "
+          "be called with enum CallOp.");
+    }
+    _used_builtin_callables.mark(call_op);
+    ArenaVector func_args{*_arena, args};
+    return _arena->create<CallExpr>(type, call_op, func_args);
+}
+
+const CallExpr *FunctionBuilder::call(const Type *type, Function custom, std::span<const Expression *const> args) noexcept {
+    if (custom.tag() != Function::Tag::CALLABLE) {
+        LUISA_ERROR_WITH_LOCATION("Calling non-callable function in device code.");
+    }
+    ArenaVector func_args{*_arena, args};
+    auto expr = _arena->create<CallExpr>(type, custom, func_args);
+    if (auto iter = std::find(_used_custom_callables.cbegin(), _used_custom_callables.cend(), custom);
+    iter == _used_custom_callables.cend()) {
+        _used_custom_callables.emplace_back(custom);
+    }
+    return expr;
+}
+
+void FunctionBuilder::call(CallOp call_op, std::span<const Expression *const> args) noexcept {
+    _void_expr(call(nullptr, call_op, args));
+}
+
+void FunctionBuilder::call(Function custom, std::span<const Expression *const> args) noexcept {
+    _void_expr(call(nullptr, custom, args));
 }
 
 }// namespace luisa::compute::detail

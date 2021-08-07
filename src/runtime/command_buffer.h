@@ -1,26 +1,42 @@
 //
-// Created by Mike Smith on 2021/3/18.
+// Created by Mike Smith on 2021/7/20.
 //
 
 #pragma once
 
-#include <functional>
-#include <runtime/command.h>
+#include <runtime/event.h>
+#include <runtime/command_list.h>
 
 namespace luisa::compute {
 
+class Command;
+class Stream;
+
 class CommandBuffer {
 
+public:
+    struct Commit {};
+
 private:
-    std::vector<CommandHandle> _commands;
+    Stream *_stream;
+    CommandList _command_list;
+
+private:
+    friend class Stream;
+    void _commit() &noexcept;
+    CommandBuffer(CommandBuffer &&another) noexcept;
+    explicit CommandBuffer(Stream *stream) noexcept;
 
 public:
-    CommandBuffer() noexcept = default;
-    void append(CommandHandle cmd) noexcept;
-    [[nodiscard]] auto begin() const noexcept { return _commands.cbegin(); }
-    [[nodiscard]] auto end() const noexcept { return _commands.cend(); }
-    [[nodiscard]] auto empty() const noexcept { return _commands.empty(); }
-    [[nodiscard]] auto size() const noexcept { return _commands.size(); }
+    ~CommandBuffer() noexcept;
+    CommandBuffer &operator=(CommandBuffer &&) noexcept = delete;
+    CommandBuffer &operator<<(Command *cmd) &noexcept;
+    CommandBuffer &operator<<(Event::Signal) &noexcept;
+    CommandBuffer &operator<<(Event::Wait) &noexcept;
+    CommandBuffer &operator<<(Commit) &noexcept;
+    void commit() &noexcept { _commit(); }
 };
 
-}// namespace luisa::compute
+[[nodiscard]] constexpr auto commit() noexcept { return CommandBuffer::Commit{}; }
+
+}

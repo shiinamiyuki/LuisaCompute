@@ -1,7 +1,7 @@
 #pragma once
 #include <Common/GFXUtil.h>
-#include <Common/VObject.h>
-#include <Common/Runnable.h>
+#include <util/VObject.h>
+#include <util/Runnable.h>
 #include <ShaderCompile/ShaderUniforms.h>
 #include <ast/function.h>
 #include <runtime/context.h>

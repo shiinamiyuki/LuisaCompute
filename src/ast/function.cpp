@@ -44,7 +44,7 @@ std::span<const Function> Function::custom_callables() const noexcept {
     return _builder->custom_callables();
 }
 
-std::span<const CallOp> Function::builtin_callables() const noexcept {
+CallOpSet Function::builtin_callables() const noexcept {
     return _builder->builtin_callables();
 }
 
@@ -68,8 +68,12 @@ bool Function::raytracing() const noexcept {
     return _builder->raytracing();
 }
 
-std::span<const Function::TextureHeapBinding> Function::captured_texture_heaps() const noexcept {
-    return _builder->captured_texture_heaps();
+std::span<const Function::HeapBinding> Function::captured_heaps() const noexcept {
+    return _builder->captured_heaps();
+}
+
+std::span<const Function::AccelBinding> Function::captured_accels() const noexcept {
+    return _builder->captured_accels();
 }
 
 }// namespace luisa::compute
